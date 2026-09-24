@@ -26,6 +26,9 @@ Typical loop: `jac_ast_edit` for symbol surgery → `jac_check_syntax` to verify
 `PI_CODING_AGENT_DIR=~/repos/jac-pi/.pi-home` — only the Jac stack loads:
 
 - `.pi-home/settings.json` — `pi-mcp-adapter` + default model
+- `.pi-home/APPEND_SYSTEM.md` — home comm style + GitHub Actions rule
+  (always use `gh` CLI: `gh run view/watch`, `gh pr checks`, `gh api`;
+  confirm conclusion before claiming CI passed)
 - `.pi-home/auth.json` etc. — symlinks into `~/.pi/agent` (gitignored,
   never commit credentials)
 - project `.pi/settings.json` — `pi-jac-ast-edit`
@@ -38,6 +41,14 @@ mkdir -p ~/repos/jac-pi/.pi-home
 ln -sf ~/.pi/agent/auth.json ~/repos/jac-pi/.pi-home/auth.json
 ln -sf ~/.pi/agent/models-store.json ~/repos/jac-pi/.pi-home/models-store.json
 ln -sf ~/.pi/agent/models.json ~/repos/jac-pi/.pi-home/models.json
+cp ~/.pi/agent/APPEND_SYSTEM.md ~/repos/jac-pi/.pi-home/APPEND_SYSTEM.md
+cat >> ~/repos/jac-pi/.pi-home/APPEND_SYSTEM.md <<'MD'
+
+## GitHub Actions
+
+- ALWAYS use the `gh` CLI for anything GitHub Actions related: `gh run view`, `gh run watch`, `gh run list`, `gh pr checks`, `gh api`. Never open a browser or use other means.
+- Push and watch CI to terminal state before reporting success — never claim a run passed without `gh run view` confirming the conclusion.
+MD
 printf '{\n  "/home/jac/repos": true\n}\n' > ~/repos/jac-pi/.pi-home/trust.json
 cat > ~/repos/jac-pi/.pi-home/settings.json <<'JSON'
 {
