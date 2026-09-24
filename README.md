@@ -1,40 +1,71 @@
-# jac-pi
+# JacPi
 
-Dedicated pi workspace for Jac editing. Running `pi` from this directory gives
-you the Jac AST-editing toolchain on top of your normal global config.
+An AST-edits-first coding agent for the [Jac](https://www.jaseci.org) language,
+built on [pi](https://github.com/badlogic/pi-coding-agent).
 
-## What's in the config
+Regular coding agents edit files by matching text and patching line offsets.
+JacPi removes that failure mode: the **`edit` tool is disabled** and every code
+change goes through `jac_ast_edit` — symbol-targeted tree-sitter operations
+that locate code by name, splice at exact AST positions, and verify the result
+by re-parsing before it ever touches disk.
 
-| File | Purpose |
-|---|---|
-| `.pi/settings.json` | Loads [`pi-jac-ast-edit`](../pi-jac-ast-edit) — the `jac_ast_edit` tool (tree-sitter-backed AST editing for `.jac`, harvested from Empryo's ast_edit) |
-| `.pi/mcp.json` | Enables the `jac` MCP server (`jac mcp`) — `jac_check_syntax`, `jac_validate_jac`, `jac_lint_jac`, `jac_format_jac`, `jac_run_jac`, docs tools |
+## How it edits
 
-## Usage
-
-```bash
-cd ~/repos/jac-pi
-pi
+```
+symbols          jac_ast_edit              jac_check_syntax      jac_format_jac
+(map targets) →  (surgical AST ops,      →  (semantic verify)   →  (canonical style)
+                  re-parse gate on write)
 ```
 
-Typical loop: `jac_ast_edit` for symbol surgery → `jac_check_syntax` to verify
-→ `jac_format_jac` to canonicalize.
+1. **Discover** — `{path, action:'symbols'}` lists every symbol (kind,
+   qualified name, line range). The model picks targets by name, never by line.
+2. **Edit** — 27 typed operations across four tiers (MICRO / BODY / STRUCT /
+   FILE): `rename`, `set_type`, `add_parameter`, `set_body`, `replace_in_body`
+   anchor pairs, `add_method`, `add_import`/`organize_imports`, declaration
+   creators (`add_archetype`, `add_impl`, `add_test`, …). Multi-op batches are
+   atomic; a final re-parse gate rejects the batch if syntax regresses.
+3. **Verify** — the jac MCP server (`jac mcp`) provides
+   `jac_check_syntax`, `jac_validate_jac`, `jac_lint_jac`.
+4. **Format** — `jac_format_jac` canonicalizes style (the engine is
+   deliberately formatting-agnostic).
 
-## Isolated mode (`jacpy`)
+Miss a name? The error *is* the search: a full available-symbols list plus a
+Damerau-Levenshtein "Did you mean?" (`Card.labl` → `Card.label`).
 
-`jacpy` (zsh function) runs pi fully isolated from your home config via
-`PI_CODING_AGENT_DIR=~/repos/jac-pi/.pi-home` — only the Jac stack loads:
+## Components
 
-- `.pi-home/settings.json` — `pi-mcp-adapter` + default model
-- `.pi-home/APPEND_SYSTEM.md` — home comm style + GitHub Actions rule
-  (always use `gh` CLI: `gh run view/watch`, `gh pr checks`, `gh api`;
-  confirm conclusion before claiming CI passed)
-- `.pi-home/auth.json` etc. — symlinks into `~/.pi/agent` (gitignored,
-  never commit credentials)
-- project `.pi/settings.json` — `pi-jac-ast-edit`
-- project `.pi/mcp.json` — the `jac` MCP server
+| Piece | Repo / path | Role |
+|---|---|---|
+| Editing engine | [chess10kp/pi-jac-ast-edit](https://github.com/chess10kp/pi-jac-ast-edit) | tree-sitter binding + `jac_ast_edit` pi tool (27 ops) |
+| This repo | config + launcher | the agent itself: isolated agent dir, tool allowlist, jac MCP, system prompt |
+| `jacpy` | `~/.zshrc` function | launches the agent: `PI_CODING_AGENT_DIR=.pi-home` + this workspace, keeps your cwd |
 
-Bootstrap after a fresh clone:
+Tool surface (verified): `read`, `bash`, `write`, `jac_ast_edit`, pi-mcp-adapter
++ the 174 jac MCP tools. Note `defaultTools` is a global allowlist — extension
+tools must be named in it or they silently vanish. No `edit`, no home
+packages/skills/themes.
+
+## Setup
+
+Clone side by side (the package reference `../../pi-jac-ast-edit` is relative
+to `.pi/settings.json`):
+
+```bash
+git clone git@github.com:chess10kp/jac-pi.git ~/repos/jac-pi
+git clone git@github.com:chess10kp/pi-jac-ast-edit.git ~/repos/pi-jac-ast-edit
+```
+
+Build the engine binding once:
+
+```bash
+cd ~/repos/pi-jac-ast-edit
+python3 -m venv .venv
+.venv/bin/pip install "tree-sitter>=0.25,<0.27" setuptools
+.venv/bin/pip install -e ./python
+```
+
+Bootstrap the isolated agent dir (gitignored — it holds auth symlinks, never
+commit it):
 
 ```bash
 mkdir -p ~/repos/jac-pi/.pi-home
@@ -55,23 +86,26 @@ cat > ~/repos/jac-pi/.pi-home/settings.json <<'JSON'
   "defaultProvider": "opencode",
   "defaultModel": "muse-spark-1.2-contributor-free",
   "defaultThinkingLevel": "high",
+  "defaultTools": ["read", "bash", "write", "jac_ast_edit"],
   "packages": ["npm:pi-mcp-adapter"]
 }
 JSON
 ```
 
-Local-path packages are referenced in place — edits to
-`~/repos/pi-jac-ast-edit` take effect after a `/reload` (no reinstall).
+Add the launcher to `~/.zshrc`:
 
-**Clone layout:** the package reference `../../pi-jac-ast-edit` is relative to
-`.pi/settings.json`, i.e. it expects the sibling checkout
-`~/repos/pi-jac-ast-edit`. Clone both repos side by side:
-
-```bash
-git clone git@github.com:chess10kp/jac-pi.git ~/repos/jac-pi
-git clone git@github.com:chess10kp/pi-jac-ast-edit.git ~/repos/pi-jac-ast-edit
+```zsh
+jacpy() { (cd ~/repos/jac-pi && PI_CODING_AGENT_DIR="$HOME/repos/jac-pi/.pi-home" pi "$@") }
 ```
 
-Project settings merge with your global `~/.pi/agent` config; start pi with
-`--no-plugins` variants or trim global packages if you want this dir fully
-minimal.
+## Workspace layout
+
+| File | Purpose |
+|---|---|
+| `.pi/settings.json` | project config (plain `pi` from this dir): loads `../../pi-jac-ast-edit` on top of your global config |
+| `.pi/mcp.json` | the `jac` MCP server — syntax/validate/lint/format/run + docs |
+| `.pi-home/` | isolated agent dir for `jacpy` (gitignored; bootstrap above) |
+| `.gitignore` | keeps `.pi-home/` and engine build artifacts out of git |
+
+Edits to `~/repos/pi-jac-ast-edit` are picked up in place — `/reload`, no
+reinstall. Local-path packages expect the sibling-clone layout above.
