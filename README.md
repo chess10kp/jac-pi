@@ -20,6 +20,35 @@ pi
 Typical loop: `jac_ast_edit` for symbol surgery → `jac_check_syntax` to verify
 → `jac_format_jac` to canonicalize.
 
+## Isolated mode (`jacpy`)
+
+`jacpy` (zsh function) runs pi fully isolated from your home config via
+`PI_CODING_AGENT_DIR=~/repos/jac-pi/.pi-home` — only the Jac stack loads:
+
+- `.pi-home/settings.json` — `pi-mcp-adapter` + default model
+- `.pi-home/auth.json` etc. — symlinks into `~/.pi/agent` (gitignored,
+  never commit credentials)
+- project `.pi/settings.json` — `pi-jac-ast-edit`
+- project `.pi/mcp.json` — the `jac` MCP server
+
+Bootstrap after a fresh clone:
+
+```bash
+mkdir -p ~/repos/jac-pi/.pi-home
+ln -sf ~/.pi/agent/auth.json ~/repos/jac-pi/.pi-home/auth.json
+ln -sf ~/.pi/agent/models-store.json ~/repos/jac-pi/.pi-home/models-store.json
+ln -sf ~/.pi/agent/models.json ~/repos/jac-pi/.pi-home/models.json
+printf '{\n  "/home/jac/repos": true\n}\n' > ~/repos/jac-pi/.pi-home/trust.json
+cat > ~/repos/jac-pi/.pi-home/settings.json <<'JSON'
+{
+  "defaultProvider": "opencode",
+  "defaultModel": "muse-spark-1.2-contributor-free",
+  "defaultThinkingLevel": "high",
+  "packages": ["npm:pi-mcp-adapter"]
+}
+JSON
+```
+
 Local-path packages are referenced in place — edits to
 `~/repos/pi-jac-ast-edit` take effect after a `/reload` (no reinstall).
 
