@@ -38,7 +38,7 @@ Damerau-Levenshtein "Did you mean?" (`Card.labl` → `Card.label`).
 |---|---|---|
 | Editing engine | [chess10kp/pi-jac-ast-edit](https://github.com/chess10kp/pi-jac-ast-edit) | tree-sitter binding + `jac_ast_edit` pi tool (27 ops) |
 | This repo | config + launcher | the agent itself: isolated agent dir, tool allowlist, jac MCP, system prompt |
-| `jacpy` | `~/.zshrc` function | launches the agent: `PI_CODING_AGENT_DIR=.pi-home` + this workspace, keeps your cwd |
+| `jacpy` | `~/.zshrc` function | launches the agent **from your current project**: `PI_CODING_AGENT_DIR=.pi-home` + explicit `-e` extension load — no `cd`, sessions/AGENTS.md/git stay on your repo |
 
 Tool surface (verified): `read`, `bash`, `write`, `jac_ast_edit`, pi-mcp-adapter
 + the 174 jac MCP tools. Note `defaultTools` is a global allowlist — extension
@@ -81,6 +81,14 @@ cat >> ~/repos/jac-pi/.pi-home/APPEND_SYSTEM.md <<'MD'
 - Push and watch CI to terminal state before reporting success — never claim a run passed without `gh run view` confirming the conclusion.
 MD
 printf '{\n  "/home/jac/repos": true\n}\n' > ~/repos/jac-pi/.pi-home/trust.json
+cat > ~/repos/jac-pi/.pi-home/mcp.json <<'JSON'
+{
+  "settings": { "directTools": false },
+  "mcpServers": {
+    "jac": { "command": "jac", "args": ["mcp"], "enabled": true, "directTools": false }
+  }
+}
+JSON
 cat > ~/repos/jac-pi/.pi-home/settings.json <<'JSON'
 {
   "defaultProvider": "opencode",
@@ -95,8 +103,14 @@ JSON
 Add the launcher to `~/.zshrc`:
 
 ```zsh
-jacpy() { (cd ~/repos/jac-pi && PI_CODING_AGENT_DIR="$HOME/repos/jac-pi/.pi-home" pi "$@") }
+jacpy() { PI_CODING_AGENT_DIR="$HOME/repos/jac-pi/.pi-home" pi -e "$HOME/repos/pi-jac-ast-edit/extensions/jac-ast-edit.ts" "$@" }
 ```
+
+It runs in whatever directory you're in — the agent dir supplies config
+(`settings.json`, `mcp.json`, `APPEND_SYSTEM.md`), the `-e` flag loads the
+`jac_ast_edit` extension explicitly (project `.pi/` discovery would look in
+*your* project, not this one), and your project's own `.pi/` config still
+merges in normally.
 
 ## Workspace layout
 
@@ -105,6 +119,7 @@ jacpy() { (cd ~/repos/jac-pi && PI_CODING_AGENT_DIR="$HOME/repos/jac-pi/.pi-home
 | `.pi/settings.json` | project config (plain `pi` from this dir): loads `../../pi-jac-ast-edit` on top of your global config |
 | `.pi/mcp.json` | the `jac` MCP server — syntax/validate/lint/format/run + docs |
 | `.pi-home/` | isolated agent dir for `jacpy` (gitignored; bootstrap above) |
+| `.pi-home/mcp.json` | jac server definition — agent-dir scoped so it loads from any cwd |
 | `.gitignore` | keeps `.pi-home/` and engine build artifacts out of git |
 
 Edits to `~/repos/pi-jac-ast-edit` are picked up in place — `/reload`, no
